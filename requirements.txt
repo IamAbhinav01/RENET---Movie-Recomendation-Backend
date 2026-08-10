@@ -1,4 +1,6 @@
 psycopg
+psycopg2
 sqlalchemy
 python-dotenv
 pydantic-settings
+pytz
