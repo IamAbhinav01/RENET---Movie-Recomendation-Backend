@@ -1,6 +1,6 @@
 from app.schemas.postgres_schema import Base
 from app.config.db_Config import engine
-from app.config.artifacts_loader import load_models
+from app.config.artifacts_loader import load_models,models
 import contextlib
 from fastapi import FastAPI
 
@@ -19,6 +19,12 @@ app = FastAPI(title="ReNet RecSys", version="1.0.0", lifespan=lifespan)
 @app.get("/")
 def root():
     return {"status": "ok", "message": "ReNet Recommendation Engine is running"}
+
+@app.post("/admin/reload-models")
+def reload_models():
+    models.clear()
+    load_models()
+    return {"status": "Models reloaded successfully"}
 
 
 if __name__ == "__main__":
