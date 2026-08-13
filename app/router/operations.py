@@ -6,6 +6,7 @@ from app.services.operationService import (
     get_item_detail,
     reload_model_artifacts,
 )
+from app.services.recommendations import recommend
 
 router = APIRouter()
 
@@ -28,3 +29,8 @@ def interaction_endpoint():
 @router.get("/item")
 def item_endpoint():
     return get_item_detail()
+
+
+@router.get("/api/recommend")
+def recommend_movies(user_id: int, n: int = 10):
+    return {"user_id": user_id, "recommendations": recommend(user_id, n=n)}
