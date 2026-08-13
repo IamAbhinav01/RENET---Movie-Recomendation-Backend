@@ -1,5 +1,5 @@
-from config.db_Config import engine
-from sqlalchemy import Integer,String,Column,Text
+from app.config.db_Config import engine
+from sqlalchemy import Integer,String,Column,Text,Float,ForeignKey
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -20,34 +20,14 @@ class Item(Base):
     title = Column(Text,nullable=False)
     genres = Column(Text,nullable=False)
     primary_genre = Column(Text,nullable=False)
+    poster_url = Column(Text, nullable=True)
+    plot = Column(Text, nullable=True)
 
 
-SQL_SCHEMA = """
-DROP TABLE IF EXISTS interactions CASCADE;
-DROP TABLE IF EXISTS items CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
-
-CREATE TABLE users (
-    id INTEGER PRIMARY KEY
-);
-
-CREATE TABLE items (
-    id INTEGER PRIMARY KEY,
-    title TEXT NOT NULL,
-    genres TEXT NOT NULL,
-    primary_genre TEXT NOT NULL
-);
-
-CREATE TABLE interactions (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    item_id INTEGER NOT NULL REFERENCES items(id),
-    rating REAL NOT NULL,
-    event_type TEXT NOT NULL DEFAULT 'rating',
-    created_at TIMESTAMP NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_interactions_user ON interactions(user_id);
-CREATE INDEX idx_interactions_item ON interactions(item_id);
-
-"""
+class Interactions(Base):
+    __tablename__ = 'interactions'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    item_id = Column(Integer, ForeignKey('items.id'), nullable=False)
+    rating = Column(Float, nullable=False)
+    event_type = Column(String, nullable=False, default='rating')

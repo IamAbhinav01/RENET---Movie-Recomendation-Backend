@@ -7,11 +7,11 @@ import lightgbm as lgbm
 models= {}
 
 def cache_models():
-    with open('../artifacts/als_model.pkl','rb') as f:
+    with open('app/artifacts/als_model.pkl','rb') as f:
         models["als"] = pkl.load(f)
-    models["faiss_index"] = faiss.read_index("../artifacts/content.index")
-    models["content_item_ids"] = np.load("../artifacts/content_item_ids.npy")    
-    models["ranker"] = lgbm.Booster(model_file="../artifacts/ranker.txt")
+    models["faiss_index"] = faiss.read_index("app/artifacts/content.index")
+    models["content_item_ids"] = np.load("app/artifacts/content_item_ids.npy")    
+    models["ranker"] = lgbm.Booster(model_file="app/artifacts/ranker.txt")
 
 def load_models():
     cache_models()

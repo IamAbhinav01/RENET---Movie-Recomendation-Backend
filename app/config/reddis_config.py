@@ -1,6 +1,6 @@
 import redis
-from server_Config import server_config
-from logger_Config import setup_logger
+from app.config.server_Config import server_config
+from app.config.logger_Config import setup_logger
 
 settings = server_config()
 logger = setup_logger()
