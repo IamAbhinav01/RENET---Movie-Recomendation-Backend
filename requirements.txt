@@ -12,3 +12,5 @@ scipy
 redis
 fastapi 
 uvicorn
+httpx2
+pytest
