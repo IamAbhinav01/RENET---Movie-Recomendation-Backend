@@ -6,9 +6,15 @@ settings = server_config()
 logger = setup_logger()
 
 try:
-    client = redis.Redis(host=settings.HOST,port=settings.REDIS_PORT,decode_responses=True)
+    client = redis.Redis(
+        host=settings.HOST,
+        port=settings.REDIS_PORT,
+        decode_responses=True,
+        protocol=2,
+    )
+    client.ping()
     logger.info("Connected to Redis")
-
 except Exception as e:
-    logger.error(f"Error while conneting to redis , error -> {e}")
+    logger.warning(f"Redis unavailable, continuing without cache: {e}")
+    client = None
 

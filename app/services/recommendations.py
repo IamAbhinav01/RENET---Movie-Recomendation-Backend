@@ -137,25 +137,30 @@ def rerank(ranked_candidates, all_watched_items, max_per_genre=3, top_k=10):
 def recommend(user_id: int, n=10):
     # 1. Check Redis Cache First
     cache_key = f"recs:user:{user_id}"
-    cached_data = client.get(cache_key)
-    if cached_data:
-        return json.loads(cached_data)
+    if client is not None:
+        try:
+            cached_data = client.get(cache_key)
+            if cached_data:
+                return json.loads(cached_data)
+        except Exception:
+            pass
+
     # 2. Pipeline Run
     user_interactions = get_user_interactions(user_id)
     all_watched_items = set(user_interactions["item_id"])
     positive_items = set(user_interactions[user_interactions["rating"] >= 4.0]["item_id"])
     user_genres = {item_genre.get(item_id, "Unknown") for item_id in positive_items}
-    
+
     als_candidates = get_als_candidates(user_id, n=100)
     content_candidates = get_content_candidates(list(positive_items), n=100)
     candidates = merge_candidates(als_candidates, content_candidates)
-    
+
     ranked_candidates = rank_candidates(candidates, user_genres)
     if not ranked_candidates:
         return []
-        
+
     final_candidates = rerank(ranked_candidates, all_watched_items, top_k=n)
-    
+
     results = []
     for candidate in final_candidates:
         item_id = candidate["item_id"]
@@ -168,7 +173,11 @@ def recommend(user_id: int, n=10):
             "genres": movie["genres"],
             "score": float(candidate["ranker_score"])
         })
-        
-    # 3. Cache the output in Redis for 1 hour
-    client.setex(cache_key, 3600, json.dumps(results))
+
+    # 3. Cache the output in Redis for 1 hour if available
+    if client is not None:
+        try:
+            client.setex(cache_key, 3600, json.dumps(results))
+        except Exception:
+            pass
     return results
