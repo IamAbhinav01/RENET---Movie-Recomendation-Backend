@@ -1,265 +1,228 @@
-# 🎬 RENET: Multi-Stage Hybrid Recommendation & Ranking Engine
+# ReNet Recommendation Service
 
-<p align="center">
-  <strong>An End-to-End, Production-Grade Recommendation Engine Combining Collaborative Filtering, Semantic Vector Search, and Learning-to-Rank (LTR).</strong>
-</p>
+A FastAPI-based movie recommendation microservice that combines collaborative filtering, content similarity, and ranking logic to generate personalized recommendations.
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
-  <img src="https://img.shields.io/badge/PostgreSQL-15-336791?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL" />
-  <img src="https://img.shields.io/badge/Redis-6.0+-DC382D?style=for-the-badge&logo=redis&logoColor=white" alt="Redis" />
-  <img src="https://img.shields.io/badge/FAISS-Vector%20Search-008080?style=for-the-badge" alt="FAISS" />
-  <img src="https://img.shields.io/badge/LightGBM-LambdaRank-brightgreen?style=for-the-badge" alt="LightGBM" />
-  <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License" />
-</p>
+## Overview
 
----
+ReNet is a hybrid recommendation system inspired by modern recommendation architectures used by streaming platforms. It blends:
 
-## 📌 Table of Contents
+- collaborative filtering via Implicit ALS
+- semantic candidate retrieval via FAISS vector search
+- learning-to-rank scoring via LightGBM
+- business rules such as filtering already watched items and limiting repeated genres
 
-1. [Project Overview](#1-project-overview)
-2. [High-Level Architecture](#2-high-level-architecture)
-3. [The 3-Stage Recommendation Funnel](#3-the-3-stage-recommendation-funnel)
-4. [Mathematical & Algorithmic Foundations](#4-mathematical--algorithmic-foundations)
-5. [Database Architecture & Schema](#5-database-architecture--schema)
-6. [Repository & Artifacts Structure](#6-repository--artifacts-structure)
-7. [Tech Stack & Dependencies](#7-tech-stack--dependencies)
-8. [Installation & Setup Guide](#8-installation--setup-guide)
-9. [Training Pipeline Walkthrough](#9-training-pipeline-walkthrough)
-10. [Inference & API Usage](#10-inference--api-usage)
-11. [Key Engineering Highlights](#11-key-engineering-highlights)
-12. [Performance & Evaluation](#12-performance--evaluation)
-13. [Production Roadmap](#13-production-roadmap)
+The application exposes a lightweight REST API and is built to work with PostgreSQL for persistent data and Redis for optional caching.
 
----
+## Architecture
 
-## 1. Project Overview
+![ReNet Architecture](architecture.png)
 
-**RENET** addresses the fundamental scaling challenge in modern recommender systems: **How to accurately rank millions of items for millions of users under strict real-time latency constraints (<50ms).**
+The design follows this flow:
 
-Standard single-model solutions (such as pure Matrix Factorization or brute-force Deep Neural Networks) fail at scale due to computational bottlenecks and the cold-start problem. RENET implements the **industry-standard multi-stage recommendation funnel** used by production platforms like Netflix, YouTube, Spotify, and Pinterest:
+1. A client sends a recommendation request to the FastAPI router.
+2. The app checks Redis for a cached result.
+3. If no cache hit exists, the ML pipeline runs.
+4. The pipeline generates candidates using ALS and FAISS.
+5. The ranker scores candidates and applies business rules.
+6. The final list is returned to the user and optionally cached.
 
-- **Dual-Source Retrieval**: Captures both _behavioral co-occurrence_ (via Implicit Alternating Least Squares) and _content semantics_ (via Transformer embeddings + FAISS).
-- **Learning-to-Rank (LTR)**: A gradient-boosted decision tree (LightGBM) optimized with LambdaRank to personalize item ordering.
-- **Business-Rule Diversity Filtering**: Post-processing logic to eliminate genre over-concentration and duplicate consumptions.
+## System components
 
----
+- API layer: FastAPI router and HTTP endpoints
+- Service layer: recommendation and operation logic
+- Repository layer: database access for users, items, and interactions
+- ML pipeline: ALS, FAISS, and LightGBM scoring
+- Data sources: PostgreSQL for catalog and interaction data, Redis for cache
+- Artifacts: serialized model files and indexes stored under the app artifacts folder
 
-## 2. High-Level Architecture
+## Project structure
 
-```
-                          ┌─────────────────────────────┐
-                          │   Raw MovieLens 100K Data   │
-                          └──────────────┬──────────────┘
-                                         │
-                                         ▼
-                          ┌─────────────────────────────┐
-                          │   PostgreSQL Database       │
-                          │   [users, items, events]    │
-                          └──────────────┬──────────────┘
-                                         │
-                 ┌───────────────────────┴───────────────────────┐
-                 │                                               │
-                 ▼                                               ▼
-   ┌───────────────────────────┐                   ┌───────────────────────────┐
-   │   PATH A: Collaborative   │                   │    PATH B: Content-Based  │
-   │   Implicit ALS Matrix     │                   │    SentenceTransformers   │
-   │   Factorization (Factors=64)                  │    + FAISS IndexFlatIP    │
-   └─────────────┬─────────────┘                   └─────────────┬─────────────┘
-                 │                                               │
-                 │ ~100 Candidates                               │ ~100 Candidates
-                 └───────────────────────┬───────────────────────┘
-                                         │
-                                         ▼
-                          ┌─────────────────────────────┐
-                          │  Candidate Merger & Feature │
-                          │  Extraction Layer           │
-                          │  - als_score                │
-                          │  - content_sim              │
-                          │  - popularity               │
-                          │  - genre_match              │
-                          └──────────────┬──────────────┘
-                                         │
-                                         ▼
-                          ┌─────────────────────────────┐
-                          │  Stage 2: Ranker            │
-                          │  LightGBM (LambdaRank)      │
-                          └──────────────┬──────────────┘
-                                         │
-                                         ▼
-                          ┌─────────────────────────────┐
-                          │  Stage 3: Business Logic    │
-                          │  - Drop Watched / Rated     │
-                          │  - Max 3 Items per Genre    │
-                          └──────────────┬──────────────┘
-                                         │
-                                         ▼
-                          ┌─────────────────────────────┐
-                          │   Top-K Final Predictions   │
-                          └─────────────────────────────┘
-```
-
----
-
-## 3. The 3-Stage Recommendation Funnel
-
-| Stage       | Name                                 | Target Scale               | Latency          | Core Responsibility                                                                   |
-| :---------- | :----------------------------------- | :------------------------- | :--------------- | :------------------------------------------------------------------------------------ |
-| **Stage 1** | **Candidate Generation (Retrieval)** | $N \approx 10,000 \to 200$ | $< 10\text{ ms}$ | High recall. Combines behavioral patterns (ALS) with semantic similarity (FAISS).     |
-| **Stage 2** | **Scoring & Ranking (LTR)**          | $200 \to 50$               | $< 20\text{ ms}$ | High precision. Optimizes $NDCG$ ranking using multi-source feature interactions.     |
-| **Stage 3** | **Re-ranking & Business Rules**      | $50 \to 10$                | $< 2\text{ ms}$  | User experience. Enforces genre diversity caps and eliminates already-consumed items. |
-
----
-
-## 4. Mathematical & Algorithmic Foundations
-
-### 4.1. Collaborative Filtering: Implicit ALS
-
-Instead of treating unrated items as negative, implicit feedback models confidence $c_{ui} = 1 + \alpha r_{ui}$ where preference $p_{ui} \in \{0, 1\}$:
-$$\min_{x_*, y_*} \sum_{u, i} c_{ui} \left( p_{ui} - \mathbf{x}_u^T \mathbf{y}_i \right)^2 + \lambda \left( \sum_u \|\mathbf{x}_u\|_2^2 + \sum_i \|\mathbf{y}_i\|_2^2 \right)$$
-
-- **Latent Dimension ($K$)**: 64
-- **Regularization ($\lambda$)**: 0.05
-- **Iterations**: 20
-
-### 4.2. Semantic Embeddings & FAISS Vector Search
-
-1. Movie metadata ($T_i = \text{Title}_i + \text{Genres}_i$) is encoded using `all-MiniLM-L6-v2`:
-   $$\mathbf{e}_i = \text{Encoder}(T_i) \in \mathbb{R}^{384}$$
-2. Vectors are $L_2$-normalized: $\hat{\mathbf{e}}_i = \frac{\mathbf{e}_i}{\|\mathbf{e}_i\|_2}$
-3. Aggregate user taste vector for user $u$ with positive interaction set $\mathcal{H}_u^+$:
-   $$\mathbf{u}_{\text{taste}} = \text{Normalize}\left( \frac{1}{|\mathcal{H}_u^+|} \sum_{k \in \mathcal{H}_u^+} \hat{\mathbf{e}}_k \right)$$
-4. Fast inner product search via `faiss.IndexFlatIP` computes exact cosine similarity:
-   $$\text{sim}(\mathbf{u}_{\text{taste}}, \mathbf{e}_j) = \mathbf{u}_{\text{taste}}^T \hat{\mathbf{e}}_j$$
-
-### 4.3. LightGBM LambdaRank
-
-Optimizes Normalized Discounted Cumulative Gain ($NDCG@K$):
-$$NDCG@K = \frac{DCG@K}{IDCG@K}, \quad DCG@K = \sum_{i=1}^K \frac{2^{y_i} - 1}{\log_2(i + 1)}$$
-During tree boosting, pairwise gradient steps ($\lambda_{ij}$) are weighted by the metric delta $|\Delta NDCG|$ resulting from swapping the ranks of item $i$ and item $j$.
-
----
-
-## 5. Database Architecture & Schema
-
-RENET stores raw metadata and user interactions in a relational PostgreSQL database with indexes on foreign keys to support fast joins.
-
-```sql
--- Schema Definition
-DROP TABLE IF EXISTS interactions CASCADE;
-DROP TABLE IF EXISTS items CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
-
-CREATE TABLE users (
-    id INTEGER PRIMARY KEY
-);
-
-CREATE TABLE items (
-    id INTEGER PRIMARY KEY,
-    title TEXT NOT NULL,
-    genres TEXT NOT NULL,
-    primary_genre TEXT NOT NULL
-);
-
-CREATE TABLE interactions (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    item_id INTEGER NOT NULL REFERENCES items(id),
-    rating REAL NOT NULL,
-    event_type TEXT NOT NULL DEFAULT 'rating',
-    created_at TIMESTAMP NOT NULL DEFAULT now()
-);
-
--- Query Optimization Indexes
-CREATE INDEX idx_interactions_user ON interactions(user_id);
-CREATE INDEX idx_interactions_item ON interactions(item_id);
-```
-
----
-
-## 6. Repository & Artifacts Structure
-
-```
-renet/
-├── data/
-│   └── ml-latest-small/          # Downloaded MovieLens CSV files
-├── models/                       # Serialized models and index artifacts
-│   ├── als_model.pkl             # Trained implicit ALS model & ID mapping dicts
-│   ├── content_embeddings.npy    # Precomputed 384-dim item embeddings
-│   ├── content_item_ids.npy      # Array mapping vector rows to movie IDs
-│   ├── content.index             # Binary FAISS IndexFlatIP search index
-│   ├── ranker.txt                # Serialized LightGBM Booster model
-│   ├── ranker_features.json      # Ordered feature names for inference
-│   └── ranking_train.csv         # Generated training dataset with negative samples
+```text
+ReNet_Recommendation/
 ├── app/
-│   └── notebook/
-│       └── RENET.ipynb           # Complete development notebook with the recommendation code
-├── .env                          # Database and service connection credentials
-├── requirements.txt              # Pinned Python package dependencies
-└── README.md                     # Project documentation
+│   ├── artifacts/
+│   │   ├── als_model.pkl
+│   │   ├── content.index
+│   │   ├── content_embeddings.npy
+│   │   ├── content_item_ids.npy
+│   │   ├── ranker.txt
+│   │   ├── ranker_features.json
+│   │   └── ranking_train.csv
+│   ├── config/
+│   │   ├── artifacts_loader.py
+│   │   ├── db_Config.py
+│   │   ├── logger_Config.py
+│   │   ├── reddis_config.py
+│   │   └── server_Config.py
+│   ├── repository/
+│   │   ├── crudOperations.py
+│   │   ├── interactionRepository.py
+│   │   ├── itemsRepository.py
+│   │   └── userRepository.py
+│   ├── router/
+│   │   └── operations.py
+│   ├── schemas/
+│   │   └── postgres_schema.py
+│   ├── services/
+│   │   ├── operationService.py
+│   │   ├── recommendations.py
+│   │   └── retrainService.py
+│   └── dataset/
+│       └── ml-latest-small/
+├── main.py
+├── seed_db.py
+├── pyproject.toml
+├── requirements.txt
+├── .env
+├── architecture.png
+├── architecture.md
+├── build.md
+├── detailed.md
+├── LICENSE
+├── README.md
+└── tests/
+    └── test_operation_service.py
 ```
 
----
+## Tech stack
 
-## 7. Tech Stack & Dependencies
+- Python 3.10+
+- FastAPI
+- SQLAlchemy
+- PostgreSQL
+- Redis
+- NumPy / Pandas
+- FAISS
+- implicit ALS
+- LightGBM
 
-| Category                    | Component                         | Purpose                                                  |
-| :-------------------------- | :-------------------------------- | :------------------------------------------------------- |
-| **Language**                | Python 3.10+                      | Primary runtime environment                              |
-| **Database**                | PostgreSQL 15                     | Persistent storage for users, catalog items, and ratings |
-| **Cache**                   | Redis                             | Session management and fast candidate caching            |
-| **Collaborative Filtering** | `implicit` (0.7.2)                | Matrix factorization for implicit feedback datasets      |
-| **Vector Search**           | `faiss-cpu` (1.8.0)               | High-speed vector similarity search                      |
-| **Transformer NLP**         | `sentence-transformers` (3.0.1)   | MiniLM text embedding model                              |
-| **Ranking Model**           | `lightgbm` (4.4.0)                | Gradient boosted decision trees with LambdaRank          |
-| **Data & Numerics**         | `pandas`, `numpy`, `scipy`        | Data transformation and sparse matrix operations         |
-| **ORM / Drivers**           | `SQLAlchemy` (2.0.31), `psycopg2` | Database connectivity                                    |
+## Recommendation flow
 
----
+The recommendation logic in [app/services/recommendations.py](app/services/recommendations.py) follows three stages:
 
-## 8. Installation & Setup Guide
+### 1. Candidate generation
 
-### 8.1. Clone Repository & Setup Virtual Environment
+- ALS model generates collaborative filtering candidates
+- FAISS index finds semantically related content candidates
+- both sets are merged into a broader candidate pool
 
-```bash
-git clone https://github.com/your-username/renet-recsys.git
-cd renet-recsys
+### 2. Ranking
 
-python3 -m venv venv
-source venv/bin/activate  # On Windows: .\venv\Scripts\activate
+- feature values such as ALS score, content similarity, popularity, and genre match are extracted
+- LightGBM ranks the merged candidate list
+
+### 3. Business rules
+
+- previously watched movies are filtered out
+- no more than three movies per genre are kept
+- final result is truncated to the requested top K
+
+## API endpoints
+
+The application currently exposes these endpoints from [app/router/operations.py](app/router/operations.py):
+
+```http
+GET /
+POST /admin/reload-models
+GET /interaction
+GET /item
+GET /api/recommend?user_id=1&n=3
 ```
 
-### 8.2. Install System Services
-
-Ensure PostgreSQL and Redis are installed and running:
+### Example request
 
 ```bash
-# Ubuntu / Debian
-sudo apt-get update
-sudo apt-get install -y postgresql redis-server
-
-sudo service postgresql start
-sudo service redis-server start
+curl "http://localhost:8000/api/recommend?user_id=1&n=3"
 ```
 
-### 8.3. Install Python Dependencies
+### Example response
 
-```bash
-pip install --upgrade pip
-pip install pandas==2.2.2 numpy==1.26.4 scikit-learn==1.5.0 \
-            implicit==0.7.2 sentence-transformers==3.0.1 faiss-cpu==1.8.0 \
-            lightgbm==4.4.0 SQLAlchemy==2.0.31 psycopg2-binary==2.9.9 \
-            python-dotenv==1.0.1 tqdm==4.66.4 scipy==1.13.1 redis
+```json
+{
+  "user_id": 1,
+  "recommendations": [
+    {
+      "id": 1148,
+      "title": "Wallace & Gromit: The Wrong Trousers (1993)",
+      "genres": "Animation|Children|Comedy|Crime",
+      "score": 0.09605650564711671
+    }
+  ]
+}
 ```
 
-### 8.4. Initialize Database & Environment Variables
+## Local setup
 
-Create a PostgreSQL user and database:
+### 1. Clone the repository
 
 ```bash
-sudo -u postgres psql -c "CREATE USER renet WITH PASSWORD 'renet';"
+git clone <your-repository-url>
+cd ReNet_Recommendation
+```
+
+### 2. Create a virtual environment
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+```
+
+### 3. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+You can also use the project environment defined in the repository configuration:
+
+```bash
+uv sync
+```
+
+### 4. Configure environment variables
+
+Create or update a `.env` file with your database URL:
+
+```env
+DB_URL=postgresql://your_user:your_password@localhost/renet
+```
+
+Optional Redis settings are handled in the config layer and can be used if Redis is available.
+
+### 5. Start the API
+
+```bash
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Then open:
+
+```text
+http://localhost:8000/docs
+```
+
+## Data model
+
+The system relies on PostgreSQL tables such as:
+
+- users
+- items
+- interactions
+
+The schema is modeled in [app/schemas/postgres_schema.py](app/schemas/postgres_schema.py).
+
+## Notes
+
+- The recommendation service loads model artifacts on startup.
+- Redis is optional for local usage and acts as a cache layer when available.
+- The service is designed to be extended with additional endpoints, retraining jobs, and a frontend client.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for more details.
 sudo -u postgres psql -c "CREATE DATABASE renet OWNER renet;"
-```
+
+````
 
 Create a `.env` file in the root directory:
 
@@ -268,7 +231,7 @@ DATABASE_URL=postgresql://renet:renet@localhost:5432/renet
 REDIS_URL=redis://localhost:6379/0
 MODELS_DIR=./models
 DATA_DIR=./data/ml-latest-small
-```
+````
 
 ---
 
