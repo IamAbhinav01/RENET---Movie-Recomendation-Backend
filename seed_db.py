@@ -1,10 +1,3 @@
-"""
-Data Seeder Script
-Run from project root: python seed_db.py
-
-This script loads the MovieLens dataset (movies.csv + ratings.csv)
-into the PostgreSQL database tables: users, items, interactions.
-"""
 import pandas as pd
 from sqlalchemy import text
 from app.config.db_Config import engine
