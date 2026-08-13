@@ -13,7 +13,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="ReNet RecSys", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="ReNet Recommendation System", version="1.0.0", lifespan=lifespan)
 
 
 @app.get("/")
