@@ -5,11 +5,16 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "faiss-cpu>=1.15.0",
+    "implicit>=0.7.3",
+    "lightgbm>=4.7.0",
+    "numpy>=2.2.6",
     "psycopg>=3.3.4",
     "psycopg2>=2.9.12",
     "pydantic-settings>=2.15.0",
     "python-dotenv>=1.2.2",
     "pytz>=2026.3.post1",
-    "redis>=8.1.0",
+    "redis[hiredis]>=8.1.0",
+    "scipy>=1.15.3",
     "sqlalchemy>=2.0.51",
 ]

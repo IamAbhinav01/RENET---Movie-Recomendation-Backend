@@ -17,4 +17,22 @@ def load_models():
     cache_models()
     return models
 
-load_models()
+#output structure is like:
+'''
+{
+    als:{
+            model:''
+            user_id_to_idx:'',
+            idx_to_user_id:'',
+            item_id_to_idx:'',
+            idx_to_item_id:'',
+            user_item_matrix:'',
+    },
+    
+    faiss_index:'',
+    content_item_ids:'',
+    ranker:''
+}
+
+
+'''

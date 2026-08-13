@@ -4,3 +4,9 @@ sqlalchemy
 python-dotenv
 pydantic-settings
 pytz
+faiss-cpu
+lightgbm
+implicit
+numpy
+scipy
+redis
