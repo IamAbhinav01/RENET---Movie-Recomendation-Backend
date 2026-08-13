@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     APP_NAME :str = "RENET"
     DB_URL : str 
     PORT : int = 8000
+    HOST: str = 'localhost'
+    REDIS_PORT: int = 6379
 
     model_config = SettingsConfigDict(env_file='.env',env_file_encoding='utf-8',extra='allow')
 
