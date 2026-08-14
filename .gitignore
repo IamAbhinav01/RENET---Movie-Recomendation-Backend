@@ -13,3 +13,7 @@ detailed.md
 .env
 ReNet_Recommendation\build.md
 build.md
+
+seed_db.py
+architecture.md
+uv.lock
