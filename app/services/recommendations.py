@@ -134,9 +134,54 @@ def rerank(ranked_candidates, all_watched_items, max_per_genre=3, top_k=10):
         if len(final) >= top_k:
             break
     return final
+def get_movie_id_by_name(movie_name: str):
+    if not movie_name or not isinstance(movie_name, str):
+        return None
+
+    normalized = movie_name.strip().lower()
+    if not normalized:
+        return None
+
+    matches = item_lookup[item_lookup["title"].str.lower().str.contains(normalized, case=False, na=False)]
+    if matches.empty:
+        exact = item_lookup[item_lookup["title"].str.lower() == normalized]
+        if exact.empty:
+            return None
+        return int(exact.index[0])
+
+    return int(matches.index[0])
+
+
+def recommend_by_movie_name(movie_name: str, n=10):
+    movie_id = get_movie_id_by_name(movie_name)
+    if movie_id is None:
+        return []
+
+    positive_items = [movie_id]
+    content_candidates = get_content_candidates(positive_items, n=100)
+    ranked_candidates = rank_candidates(content_candidates, {item_genre.get(movie_id, "Unknown")})
+    if not ranked_candidates:
+        return []
+
+    final_candidates = rerank(ranked_candidates, {movie_id}, top_k=n)
+    results = []
+    for candidate in final_candidates:
+        item_id = candidate["item_id"]
+        if item_id == movie_id or item_id not in item_lookup.index:
+            continue
+        movie = item_lookup.loc[item_id]
+        results.append({
+            "id": int(item_id),
+            "title": movie["title"],
+            "genres": movie["genres"],
+            "score": float(candidate["ranker_score"])
+        })
+    return results
+
+
 def recommend(user_id: int, n=10):
     # 1. Check Redis Cache First
-    cache_key = f"recs:user:{user_id}"
+    cache_key = f"recs:user:{user_id}:n:{n}"
     if client is not None:
         try:
             cached_data = client.get(cache_key)
