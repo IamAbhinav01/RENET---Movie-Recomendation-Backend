@@ -1,6 +1,7 @@
 import pandas as pd
 from sqlalchemy import text
 from app.config.db_Config import engine
+#adddded the movie paht
 
 MOVIES_PATH = "app/dataset/ml-latest-small/movies.csv"
 RATINGS_PATH = "app/dataset/ml-latest-small/ratings.csv"
