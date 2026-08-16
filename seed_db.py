@@ -2,6 +2,10 @@ import pandas as pd
 from sqlalchemy import text
 from app.config.db_Config import engine
 #adddded the movie paht
+from app.schemas.postgres_schema import Base
+
+# Ensure tables exist
+Base.metadata.create_all(bind=engine)
 
 MOVIES_PATH = "app/dataset/ml-latest-small/movies.csv"
 RATINGS_PATH = "app/dataset/ml-latest-small/ratings.csv"

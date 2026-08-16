@@ -38,6 +38,46 @@ else:
     popularity = {}
 
 
+def _load_items_from_db():
+    try:
+        return pd.read_sql("SELECT id, title, genres, primary_genre FROM items", engine)
+    except Exception:
+        return None
+
+
+def load_items():
+    """Ensure `items_df`, `item_genre`, `item_lookup`, and `popularity` are populated.
+    Falls back to the bundled CSV if the DB table is missing."""
+    global items_df, item_genre, item_lookup, popularity
+    if items_df is not None and not items_df.empty:
+        return
+
+    df = _load_items_from_db()
+    if df is None:
+        try:
+            csv = pd.read_csv("app/dataset/ml-latest-small/movies.csv")
+            csv = csv.rename(columns={"movieId": "id", "genres": "genres", "title": "title"})
+            csv["primary_genre"] = csv["genres"].apply(lambda g: g.split("|")[0] if pd.notna(g) and g != "" else "Unknown")
+            items_df = csv[["id", "title", "genres", "primary_genre"]]
+        except Exception:
+            items_df = pd.DataFrame(columns=["id", "title", "genres", "primary_genre"])
+    else:
+        items_df = df
+
+    item_genre = dict(zip(items_df["id"], items_df["primary_genre"]))
+    item_lookup = items_df.set_index("id")
+
+    try:
+        interactions = pd.read_sql("SELECT item_id FROM interactions", engine)
+        pop = interactions.groupby("item_id").size()
+        if len(pop) > 0:
+            popularity = (pop / pop.max()).to_dict()
+        else:
+            popularity = {}
+    except Exception:
+        popularity = {}
+
+
 
 def get_user_interactions(user_id: int):
     """Retrieve user ratings from PostgreSQL database."""
@@ -135,6 +175,7 @@ def rerank(ranked_candidates, all_watched_items, max_per_genre=3, top_k=10):
             break
     return final
 def get_movie_id_by_name(movie_name: str):
+    load_items()
     if not movie_name or not isinstance(movie_name, str):
         return None
 
@@ -153,6 +194,7 @@ def get_movie_id_by_name(movie_name: str):
 
 
 def recommend_by_movie_name(movie_name: str, n=10):
+    load_items()
     movie_id = get_movie_id_by_name(movie_name)
     if movie_id is None:
         return []
@@ -180,6 +222,7 @@ def recommend_by_movie_name(movie_name: str, n=10):
 
 
 def recommend(user_id: int, n=10):
+    load_items()
     # 1. Check Redis Cache First
     cache_key = f"recs:user:{user_id}:n:{n}"
     if client is not None:

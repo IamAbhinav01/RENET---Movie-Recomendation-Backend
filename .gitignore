@@ -8,6 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
+scripts
 ReNet_Recommendation\detailed.md
 detailed.md
 .env
