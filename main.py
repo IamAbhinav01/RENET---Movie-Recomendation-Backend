@@ -4,8 +4,13 @@ from fastapi import FastAPI
 
 from app.config.artifacts_loader import load_models
 from app.config.db_Config import engine
+from app.config.server_Config import server_config
 from app.router.operations import router
 from app.schemas.postgres_schema import Base
+
+
+settings = server_config()
+PORT = settings.PORT
 
 
 @contextlib.asynccontextmanager
@@ -23,4 +28,4 @@ app.include_router(router)
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=PORT, reload=True)

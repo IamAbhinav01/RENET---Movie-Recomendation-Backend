@@ -2,8 +2,8 @@ name: Weekly ReNET Retrain
 
 on:
   schedule:
-    - cron: '0 2 * * 0' # Every Sunday at 2 AM
-  workflow_dispatch: # Also allow manual trigger from GitHub UI
+    - cron: '0 2 * * 0'  # Every Sunday at 2 AM
+  workflow_dispatch:       # Manual trigger from GitHub UI
 
 permissions:
   contents: write
@@ -11,6 +11,23 @@ permissions:
 jobs:
   retrain:
     runs-on: ubuntu-latest
+
+    # Fix 2: Spin up a real PostgreSQL container for the runner
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: iamabhinav01
+          POSTGRES_PASSWORD: 689643
+          POSTGRES_DB: renet
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v3
 
@@ -20,17 +37,32 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
+        # Fix 1: Run from the correct subfolder
+        working-directory: ReNet_Recommendation
         run: pip install -r requirements.txt
 
-      - name: Run retraining
+      - name: Seed database with MovieLens data
+        working-directory: ReNet_Recommendation
         env:
-          DB_URL: ${{ secrets.DB_URL }}
+          # Fix 2: Point to the CI postgres service container
+          DB_URL: postgresql://iamabhinav01:689643@localhost:5432/renet
+        run: python seed_db.py
+
+      - name: Run retraining
+        working-directory: ReNet_Recommendation
+        env:
+          DB_URL: postgresql://iamabhinav01:689643@localhost:5432/renet
         run: python -m app.services.retrainService
 
       - name: Commit updated models
+        working-directory: ReNet_Recommendation
         run: |
           git config --global user.email "ci@renet.ai"
           git config --global user.name "ReNet CI"
           git add app/artifacts/
+          # Fix 3: Only commit if there are actual changes
+          git diff --staged --quiet && echo "No changes to commit" && exit 0
           git commit -m "chore: auto-retrain models [skip ci]"
+          # Fix 4: Authenticate git push with GITHUB_TOKEN
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
           git push
