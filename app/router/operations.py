@@ -12,7 +12,7 @@ router = APIRouter()
 
 
 @router.get("/")
-def root():
+def health_status():
     return get_health_status()
 
 
