@@ -5,7 +5,7 @@ from app.config.logger_Config import setup_logger
 
 settings = server_config()
 logger = setup_logger(name="RENET-DBCONFIG")
-
+c
 engine = create_engine(url=settings.DB_URL)
 
 try:
