@@ -14,14 +14,15 @@ jobs:
   retrain:
     runs-on: ubuntu-latest
 
-    # Service container: provides isolated PostgreSQL for the CI runner
+    # Service container: isolated PostgreSQL for the CI runner.
+    # Credentials come exclusively from GitHub Secrets — nothing is hardcoded here.
     services:
       postgres:
         image: postgres:15
         env:
-          POSTGRES_USER: iamabhinav01
-          POSTGRES_PASSWORD: 689643
-          POSTGRES_DB: renet
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
         ports:
           - 5432:5432
         options: >-
@@ -45,12 +46,14 @@ jobs:
 
       - name: Seed database with catalog & interaction data
         env:
-          DB_URL: ${{ secrets.DB_URL || 'postgresql://iamabhinav01:689643@localhost:5432/renet' }}
+          # DB_URL is injected from GitHub Secrets only — no hardcoded fallback
+          DB_URL: ${{ secrets.DB_URL }}
         run: python seed_db.py
 
       - name: Run 3-stage hybrid retraining pipeline (ALS + Content/FAISS + LightGBM)
         env:
-          DB_URL: ${{ secrets.DB_URL || 'postgresql://iamabhinav01:689643@localhost:5432/renet' }}
+          # Only DB_URL is needed by the recommendation service — no OMDb key here
+          DB_URL: ${{ secrets.DB_URL }}
         run: python -m app.services.retrainService
 
       - name: Commit and push updated model artifacts
