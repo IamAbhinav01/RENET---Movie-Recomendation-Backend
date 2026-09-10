@@ -1,9 +1,9 @@
-name: Weekly ReNET Retrain
+name: Bi-Daily ReNet Retrain
 
 on:
   schedule:
-    - cron: '0 2 * * 0'  # Every Sunday at 2 AM
-  workflow_dispatch:       # Manual trigger from GitHub UI
+    - cron: '30 22 */2 * *'  # Runs every 2 days at 4:00 AM IST (22:30 UTC)
+  workflow_dispatch:         # Allows manual trigger anytime from GitHub Actions UI
 
 permissions:
   contents: write
@@ -12,7 +12,7 @@ jobs:
   retrain:
     runs-on: ubuntu-latest
 
-    # Fix 2: Spin up a real PostgreSQL container for the runner
+    # Service container: provides isolated PostgreSQL for the CI runner
     services:
       postgres:
         image: postgres:15
@@ -29,40 +29,32 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          cache: 'pip'
 
       - name: Install dependencies
-        # Fix 1: Run from the correct subfolder
-        working-directory: ReNet_Recommendation
         run: pip install -r requirements.txt
 
-      - name: Seed database with MovieLens data
-        working-directory: ReNet_Recommendation
+      - name: Seed database with catalog & interaction data
         env:
-          # Fix 2: Point to the CI postgres service container
-          DB_URL: postgresql://iamabhinav01:689643@localhost:5432/renet
+          DB_URL: ${{ secrets.DB_URL || 'postgresql://iamabhinav01:689643@localhost:5432/renet' }}
         run: python seed_db.py
 
-      - name: Run retraining
-        working-directory: ReNet_Recommendation
+      - name: Run 3-stage hybrid retraining pipeline (ALS + Content/FAISS + LightGBM)
         env:
-          DB_URL: postgresql://iamabhinav01:689643@localhost:5432/renet
+          DB_URL: ${{ secrets.DB_URL || 'postgresql://iamabhinav01:689643@localhost:5432/renet' }}
         run: python -m app.services.retrainService
 
-      - name: Commit updated models
-        working-directory: ReNet_Recommendation
+      - name: Commit and push updated model artifacts
         run: |
-          git config --global user.email "ci@renet.ai"
-          git config --global user.name "ReNet CI"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
           git add app/artifacts/
-          # Fix 3: Only commit if there are actual changes
-          git diff --staged --quiet && echo "No changes to commit" && exit 0
-          git commit -m "chore: auto-retrain models [skip ci]"
-          # Fix 4: Authenticate git push with GITHUB_TOKEN
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+          git diff --staged --quiet || git commit -m "chore: auto-retrain models [skip ci]"
           git push

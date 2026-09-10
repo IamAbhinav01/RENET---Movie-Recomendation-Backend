@@ -12,5 +12,6 @@ scipy
 redis
 fastapi 
 uvicorn
-httpx2
+httpx
 pytest
+sentence-transformers
