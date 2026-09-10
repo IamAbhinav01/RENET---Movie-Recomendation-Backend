@@ -2,10 +2,10 @@ name: Bi-Daily ReNet Retrain
 
 on:
   schedule:
-    - cron: '30 22 */2 * *'  # Runs every 2 days at 4:00 AM IST (22:30 UTC)
-  workflow_dispatch:         # Allows manual trigger anytime from GitHub Actions UI
+    - cron: '30 22 */2 * *' # Runs every 2 days at 4:00 AM IST (22:30 UTC)
+  workflow_dispatch: # Allows manual trigger anytime from GitHub Actions UI
   push:
-    branches: [ master ]
+    branches: [master]
 
 permissions:
   contents: write
@@ -75,7 +75,7 @@ jobs:
           OMDB_API_KEY: ${{ secrets.OMDB_API_KEY }}
           DB_URL: ${{ secrets.DB_URL }}
           # Redis is not needed during CI ingestion (no live cache to invalidate)
-          REDIS_ADDR: ""
+          REDIS_ADDR: ''
         run: go run cmd/ingest/main.go
 
       # ── Step 5: Retrain models on the now-updated PostgreSQL catalog ─────────
@@ -86,71 +86,6 @@ jobs:
         run: python -m app.services.retrainService
 
       # ── Step 6: Commit updated model artifacts back to the repo ─────────────
-      - name: Commit and push updated model artifacts
-        run: |
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git config --global user.name "github-actions[bot]"
-          git add app/artifacts/
-          git diff --staged --quiet || git commit -m "chore: auto-retrain models [skip ci]"
-          git push
-
-
-on:
-  schedule:
-    - cron: '30 22 */2 * *'  # Runs every 2 days at 4:00 AM IST (22:30 UTC)
-  workflow_dispatch:         # Allows manual trigger anytime from GitHub Actions UI
-  push:
-    branches: [ master ]
-
-permissions:
-  contents: write
-
-jobs:
-  retrain:
-    runs-on: ubuntu-latest
-
-    # Service container: isolated PostgreSQL for the CI runner.
-    # Credentials come exclusively from GitHub Secrets — nothing is hardcoded here.
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.10
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-          cache: 'pip'
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Seed database with catalog & interaction data
-        env:
-          # DB_URL is injected from GitHub Secrets only — no hardcoded fallback
-          DB_URL: ${{ secrets.DB_URL }}
-        run: python seed_db.py
-
-      - name: Run 3-stage hybrid retraining pipeline (ALS + Content/FAISS + LightGBM)
-        env:
-          # Only DB_URL is needed by the recommendation service — no OMDb key here
-          DB_URL: ${{ secrets.DB_URL }}
-        run: python -m app.services.retrainService
-
       - name: Commit and push updated model artifacts
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
