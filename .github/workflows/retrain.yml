@@ -32,6 +32,101 @@ jobs:
           --health-retries 5
 
     steps:
+      # ── Step 1: Checkout the Recommendation Service (this repo) ─────────────
+      - name: Checkout recommendation repository
+        uses: actions/checkout@v4
+
+      # ── Step 2: Set up Python ────────────────────────────────────────────────
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      # ── Step 3: Seed base MovieLens catalog + interactions into PostgreSQL ───
+      - name: Seed base catalog (MovieLens CSV → PostgreSQL)
+        env:
+          DB_URL: ${{ secrets.DB_URL }}
+        run: python seed_db.py
+
+      # ── Step 4: Checkout Catalog Service and run Go ingestion ────────────────
+      # The Catalog Service owns all OMDb access. The Recommendation Service
+      # never touches OMDb — it only reads from PostgreSQL (architectural boundary).
+      - name: Checkout Catalog Service (for Go ingestion)
+        uses: actions/checkout@v4
+        with:
+          repository: IamAbhinav01/RENET---Catalog_Service
+          path: catalog_service
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+          cache-dependency-path: catalog_service/go.sum
+
+      - name: Discover & ingest new Indian cinema (Go → OMDb → PostgreSQL)
+        working-directory: catalog_service
+        env:
+          # OMDB_API_KEY injected ONLY here — Recommendation Service never sees it
+          OMDB_API_KEY: ${{ secrets.OMDB_API_KEY }}
+          DB_URL: ${{ secrets.DB_URL }}
+          # Redis is not needed during CI ingestion (no live cache to invalidate)
+          REDIS_ADDR: ""
+        run: go run cmd/ingest/main.go
+
+      # ── Step 5: Retrain models on the now-updated PostgreSQL catalog ─────────
+      - name: Run 3-stage hybrid retraining pipeline (ALS + Content/FAISS + LightGBM)
+        env:
+          # Recommendation Service reads only from PostgreSQL — no OMDb key
+          DB_URL: ${{ secrets.DB_URL }}
+        run: python -m app.services.retrainService
+
+      # ── Step 6: Commit updated model artifacts back to the repo ─────────────
+      - name: Commit and push updated model artifacts
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git add app/artifacts/
+          git diff --staged --quiet || git commit -m "chore: auto-retrain models [skip ci]"
+          git push
+
+
+on:
+  schedule:
+    - cron: '30 22 */2 * *'  # Runs every 2 days at 4:00 AM IST (22:30 UTC)
+  workflow_dispatch:         # Allows manual trigger anytime from GitHub Actions UI
+  push:
+    branches: [ master ]
+
+permissions:
+  contents: write
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+
+    # Service container: isolated PostgreSQL for the CI runner.
+    # Credentials come exclusively from GitHub Secrets — nothing is hardcoded here.
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
