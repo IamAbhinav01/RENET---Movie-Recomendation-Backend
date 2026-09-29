@@ -15,12 +15,23 @@ def cache_models():
     models["faiss_index"] = faiss.read_index("app/artifacts/content.index")
     models["content_item_ids"] = np.load("app/artifacts/content_item_ids.npy")
 
-    # Load ranker (LightGBM). Be tolerant to corrupted/incompatible models so app can start.
+    # Fix CRLF line endings that corrupt the lightgbm model format on Windows
+    model_path = "app/artifacts/ranker.txt"
     try:
-        models["ranker"] = lgbm.Booster(model_file="app/artifacts/ranker.txt")
+        with open(model_path, "rb") as f:
+            content = f.read()
+        if b"\r\n" in content:
+            content = content.replace(b"\r\n", b"\n")
+            with open(model_path, "wb") as f:
+                f.write(content)
+            logger.info("Fixed CRLF line endings in ranker model")
+    except Exception as e:
+        logger.warning(f"Failed to check/fix line endings for ranker model: {e}")
+
+    try:
+        models["ranker"] = lgbm.Booster(model_file=model_path)
         logger.info("Loaded ranker model")
     except Exception as e:
-        # keep app running even if ranker fails to load
         logger.warning(f"Failed to load ranker model: {e}")
         logger.debug(traceback.format_exc())
         models["ranker"] = None

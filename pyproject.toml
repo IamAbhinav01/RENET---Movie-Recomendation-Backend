@@ -1,7 +1,7 @@
 [project]
 name = "renet-recommendation"
 version = "0.1.0"
-description = "Add your description here"
+description = "a movie recommendatione engine using ALS collabarative filtering and reranking using lightGBM"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
