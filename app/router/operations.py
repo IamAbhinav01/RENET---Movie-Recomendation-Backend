@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 
 from app.services.operationService import (
     get_health_status,
@@ -32,12 +32,19 @@ def item_endpoint():
 
 
 @router.get("/api/recommend")
-def recommend_movies(movie_name: str | None = None, user_id: int | None = None, n: int = 10):
-    if movie_name:
-        results = recommend_by_movie_name(movie_name, n=n)
-        return {"movie_name": movie_name, "recommendations": results}
+def recommend_movies(movie_name: str | None = None, n: int = 10):
+    if not movie_name:
+        raise HTTPException(status_code=400, detail="Provide a movie_name.")
 
-    if user_id is not None:
-        return {"user_id": user_id, "recommendations": recommend(user_id, n=n)}
+    results = recommend_by_movie_name(movie_name, n=n)
+    return {"movie_name": movie_name, "recommendations": results}
 
-    raise HTTPException(status_code=400, detail="Provide either movie_name or user_id.")
+
+@router.get("/api/user/recommend")
+def recommend_for_session_user(
+    x_user_id: int = Header(alias="X-User-ID"), n: int = 10
+):
+    if x_user_id <= 0:
+        raise HTTPException(status_code=400, detail="Invalid session user ID.")
+
+    return {"user_id": x_user_id, "recommendations": recommend(x_user_id, n=n)}
