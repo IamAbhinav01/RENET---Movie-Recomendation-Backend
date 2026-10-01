@@ -5,7 +5,8 @@ on:
     - cron: '30 22 */2 * *' # Runs every 2 days at 4:00 AM IST (22:30 UTC)
   workflow_dispatch: # Allows manual trigger anytime from GitHub Actions UI
   push:
-    branches: [master]
+    paths-ignore:
+      - 'app/artifacts/**'
 
 permissions:
   contents: write
@@ -13,16 +14,16 @@ permissions:
 jobs:
   retrain:
     runs-on: ubuntu-latest
+    env:
+      DB_URL: postgresql://renet_ci:renet_ci_password@localhost:5432/renet_ci
 
-    # Service container: isolated PostgreSQL for the CI runner.
-    # Credentials come exclusively from GitHub Secrets — nothing is hardcoded here.
     services:
       postgres:
         image: postgres:15
         env:
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          POSTGRES_USER: renet_ci
+          POSTGRES_PASSWORD: renet_ci_password
+          POSTGRES_DB: renet_ci
         ports:
           - 5432:5432
         options: >-
@@ -48,8 +49,6 @@ jobs:
 
       # ── Step 3: Seed base MovieLens catalog + interactions into PostgreSQL ───
       - name: Seed base catalog (MovieLens CSV → PostgreSQL)
-        env:
-          DB_URL: ${{ secrets.DB_URL }}
         run: python seed_db.py
 
       # ── Step 4: Checkout Catalog Service and run Go ingestion ────────────────
@@ -64,7 +63,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version-file: catalog_service/go.mod
           cache: true
           cache-dependency-path: catalog_service/go.sum
 
@@ -73,16 +72,13 @@ jobs:
         env:
           # OMDB_API_KEY injected ONLY here — Recommendation Service never sees it
           OMDB_API_KEY: ${{ secrets.OMDB_API_KEY }}
-          DB_URL: ${{ secrets.DB_URL }}
+          MOVIES_CSV_PATH: ../app/dataset/ml-latest-small/movies.csv
           # Redis is not needed during CI ingestion (no live cache to invalidate)
           REDIS_ADDR: ''
         run: go run cmd/ingest/main.go
 
       # ── Step 5: Retrain models on the now-updated PostgreSQL catalog ─────────
       - name: Run 3-stage hybrid retraining pipeline (ALS + Content/FAISS + LightGBM)
-        env:
-          # Recommendation Service reads only from PostgreSQL — no OMDb key
-          DB_URL: ${{ secrets.DB_URL }}
         run: python -m app.services.retrainService
 
       # ── Step 6: Commit updated model artifacts back to the repo ─────────────
@@ -90,6 +86,6 @@ jobs:
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
-          git add app/artifacts/
+          git add app/artifacts/ app/dataset/ml-latest-small/movies.csv
           git diff --staged --quiet || git commit -m "chore: auto-retrain models [skip ci]"
           git push
